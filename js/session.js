@@ -1,8 +1,8 @@
 import { db } from "./firebase-config.js";
 import {
-  ref, set, get, onValue, update, onDisconnect,
+  ref, set, get, onValue, update, onDisconnect, runTransaction,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-import { buildPiles, dealHands, tilesPerPlayerForCount, sortPlayersByOrder } from "./davinci-logic.js";
+import { buildPiles, dealHands, tilesPerPlayerForCount, sortPlayersByOrder, applyActionToRoom } from "./davinci-logic.js";
 
 export const ROOM_ROOT = "davinciRooms";
 
@@ -37,6 +37,7 @@ export async function createRoom() {
         status: "lobby",
         currentTurn: null,
         phase: "draw",
+        drawnColor: null,
         winner: null,
         createdAt: Date.now(),
       },
@@ -44,8 +45,10 @@ export async function createRoom() {
       hands: {},
       pile: { B: [], W: [] },
       drawn: {},
+      lastAction: null,
     }), 8000, "Creating room");
     try { localStorage.setItem(`dv-table-${code}`, hostId); } catch {}
+    try { localStorage.setItem(`dv-host-${code}`, hostId); } catch {}
     return code;
   }
   throw new Error("Failed to generate unique room code – please retry");
@@ -53,7 +56,7 @@ export async function createRoom() {
 
 export async function joinRoom(code, playerName, storedId = null) {
   code = String(code || "").trim().toUpperCase();
-  const nameTrim = String(playerName || "").trim();
+  const nameTrim = String(playerName || "").trim().slice(0, 24);
   if (!code) throw new Error("Missing room code");
   if (!nameTrim) throw new Error("Missing player name");
 
@@ -166,12 +169,14 @@ export async function startGame(code) {
   updates["meta/status"] = "playing";
   updates["meta/currentTurn"] = ids[0];
   updates["meta/phase"] = "draw";
+  updates["meta/drawnColor"] = null;
   updates["meta/winner"] = null;
   updates["meta/playerCount"] = ids.length;
   updates["meta/tilesPerPlayer"] = perPlayer;
   updates["hands"] = hands;
   updates["pile"] = pile;
   updates["drawn"] = {};
+  updates["lastAction"] = null;
   ids.forEach((id) => {
     updates[`players/${id}/eliminated`] = false;
     updates[`players/${id}/connected`] = players[id]?.connected ?? true;
@@ -197,6 +202,8 @@ export async function kickPlayer(code, playerId) {
 
   if (room.meta?.currentTurn === playerId) {
     updates["meta/currentTurn"] = remaining.length ? remaining[0] : null;
+    updates["meta/phase"] = "draw";
+    updates["meta/drawnColor"] = null;
   }
   if (remaining.length < 2 && room.meta?.status === "playing") {
     updates["meta/status"] = "lobby";
@@ -214,10 +221,12 @@ export async function resetRoom(code) {
     "meta/status": "lobby",
     "meta/currentTurn": null,
     "meta/phase": "draw",
+    "meta/drawnColor": null,
     "meta/winner": null,
     hands: {},
     pile: { B: [], W: [] },
     drawn: {},
+    lastAction: null,
   };
   Object.keys(room.players || {}).forEach((id) => {
     updates[`players/${id}/eliminated`] = false;
@@ -228,4 +237,35 @@ export async function resetRoom(code) {
 // Host: delete room for everyone.
 export async function endRoom(code) {
   await withTimeout(set(ref(db, `${ROOM_ROOT}/${code}`), null), 8000, "Ending room");
+}
+
+// True only on the device that created the room (host-only controls).
+export function isHost(code) {
+  try {
+    if (localStorage.getItem(`dv-host-${code}`)) return true;
+    // Backwards compat for rooms created before the dv-host key existed.
+    if (localStorage.getItem(`dv-table-${code}`)) return true;
+  } catch {}
+  return false;
+}
+
+let lastApplyError = null;
+
+// ALL game actions (draw/guess/continue) go through here.
+// Runs applyActionToRoom inside a runTransaction on the room node so
+// concurrent taps can't corrupt turn order. Throws on rejection.
+export async function applyAction(code, playerId, action) {
+  code = String(code || "").trim().toUpperCase();
+  lastApplyError = null;
+  const res = await withTimeout(runTransaction(ref(db, `${ROOM_ROOT}/${code}`), (cur) => {
+    if (cur === null) return cur;
+    if (!cur.meta) { lastApplyError = "Room not found"; return; }
+    // Clone: the transaction function may run more than once.
+    const next = JSON.parse(JSON.stringify(cur));
+    const r = applyActionToRoom(next, playerId, action);
+    if (!r.ok) { lastApplyError = r.error; return; }
+    return next;
+  }), 12000, "Applying action");
+  if (!res.committed) throw new Error(lastApplyError || "Action rejected — is it still your turn?");
+  return res.snapshot.val();
 }

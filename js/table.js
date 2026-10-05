@@ -2,9 +2,8 @@ import { db } from "./firebase-config.js";
 import {
   ref, onValue,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-import { watchRoom, startGame, kickPlayer, resetRoom, endRoom, ROOM_ROOT } from "./session.js";
+import { watchRoom, startGame, kickPlayer, resetRoom, endRoom, isHost } from "./session.js";
 import { sortPlayersByOrder } from "./davinci-logic.js";
-import { ref as dbRef, set as dbSet } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 
 const params = new URLSearchParams(location.search);
 const code = (params.get("session") || "").trim().toUpperCase();
@@ -12,6 +11,8 @@ const roomCodeEl = document.getElementById("room-code");
 const tableErrorEl = document.getElementById("table-error");
 const tableConnDot = document.getElementById("table-conn-dot");
 const tableConnText = document.getElementById("table-conn-text");
+const host = isHost(code);
+let winDismissed = false;
 
 function setTableConn(connected) {
   if (!tableConnDot || !tableConnText) return;
@@ -131,6 +132,7 @@ function render(room) {
   const players = room.players || {};
   const hands = room.hands || {};
   const pile = room.pile || { B: [], W: [] };
+  const drawn = room.drawn || {};
   const ordered = sortPlayersByOrder(players);
 
   // Pile counts
@@ -141,7 +143,7 @@ function render(room) {
     pileEl.textContent = meta.status === "lobby" ? "Not dealt" : `B ${b} · W ${w} (${b + w} left)`;
   }
 
-  // Status badge + turn
+  // Status badge + turn (+ drawn note for the current player).
   const statusBadge = document.getElementById("status-badge");
   if (statusBadge) {
     statusBadge.textContent = meta.status === "playing" ? "Playing" : meta.status === "ended" ? "Ended" : "Lobby";
@@ -154,14 +156,17 @@ function render(room) {
         : `${ordered.length}/4 players — need 2–4`;
     } else if (meta.status === "playing") {
       const cur = meta.currentTurn && players[meta.currentTurn] ? players[meta.currentTurn].name : "—";
-      turnLabel.textContent = `Turn: ${cur} · phase: ${meta.phase || "draw"}`;
+      const drew = meta.currentTurn && drawn[meta.currentTurn] && meta.drawnColor
+        ? ` · has drawn a ${meta.drawnColor === "B" ? "black" : "white"} tile`
+        : "";
+      turnLabel.textContent = `Turn: ${cur} · phase: ${meta.phase || "draw"}${drew}`;
     } else if (meta.status === "ended") {
       const w = meta.winner && players[meta.winner] ? players[meta.winner].name : "—";
       turnLabel.textContent = `Winner: ${w}`;
     }
   }
 
-  // Player slots — all rows: hidden = color-only, revealed = number.
+  // Player slots — hidden tiles color-only, revealed tiles show their number.
   const slots = document.querySelectorAll(".board-player-slot");
   const slotsByIdx = {};
   slots.forEach((el) => {
@@ -186,7 +191,7 @@ function render(room) {
     nameEl.style.fontFamily = "'Space Grotesk', sans-serif";
     nameEl.style.fontWeight = isActive ? "800" : "700";
     nameEl.style.fontSize = "0.95rem";
-    nameEl.textContent = p.name + (p.connected === false ? " (offline)" : "");
+    nameEl.textContent = p.name + (p.connected === false ? " (offline)" : "") + (p.eliminated ? " (out)" : "");
     head.appendChild(nameEl);
     const headRight = document.createElement("div");
     headRight.style.display = "flex";
@@ -224,18 +229,20 @@ function render(room) {
     metaEl.style.fontSize = "0.78rem";
     metaEl.textContent = p.connected === false ? "Offline" : `${hand.length} tiles`;
     foot.appendChild(metaEl);
-    const kickBtn = document.createElement("button");
-    kickBtn.textContent = "Kick";
-    kickBtn.className = "danger";
-    kickBtn.style.padding = "0.18rem 0.45rem";
-    kickBtn.style.fontSize = "0.7rem";
-    kickBtn.style.opacity = "0.72";
-    kickBtn.onclick = async () => {
-      if (!confirm(`Kick ${p.name}? Their tiles will be removed.`)) return;
-      try { await kickPlayer(code, id); }
-      catch (e) { alert("Kick failed: " + (e.message || e)); }
-    };
-    foot.appendChild(kickBtn);
+    if (host && meta.status === "lobby") {
+      const kickBtn = document.createElement("button");
+      kickBtn.textContent = "Kick";
+      kickBtn.className = "danger";
+      kickBtn.style.padding = "0.18rem 0.45rem";
+      kickBtn.style.fontSize = "0.7rem";
+      kickBtn.style.opacity = "0.72";
+      kickBtn.onclick = async () => {
+        if (!confirm(`Kick ${p.name}? Their tiles will be removed.`)) return;
+        try { await kickPlayer(code, id); }
+        catch (e) { alert("Kick failed: " + (e.message || e)); }
+      };
+      foot.appendChild(kickBtn);
+    }
     card.appendChild(foot);
 
     const slot = slotsByIdx[idx];
@@ -253,6 +260,8 @@ function render(room) {
     }
   }
 
+  renderLastAction(room);
+
   const statusEl = document.getElementById("status");
   if (meta.status === "ended") {
     const w = meta.winner && players[meta.winner] ? players[meta.winner].name : "—";
@@ -261,26 +270,105 @@ function render(room) {
   } else {
     statusEl.className = "banner hidden";
   }
+  toggleWinOverlay(room);
 
+  // Host-only controls.
   const startBtn = document.getElementById("start-btn");
   const resetBtn = document.getElementById("reset-btn");
   const endBtn = document.getElementById("end-btn");
   const hostHint = document.getElementById("host-hint");
   const playerCount = ordered.length;
-  const canStart = meta.status === "lobby" && playerCount >= 2 && playerCount <= 4;
+  const canStart = host && meta.status === "lobby" && playerCount >= 2 && playerCount <= 4;
   startBtn.classList.toggle("hidden", !canStart);
   if (canStart) {
     const per = playerCount === 4 ? 3 : 4;
     startBtn.textContent = `Start game — deal ${per} each (${playerCount} players)`;
   }
 
-  const hasRoom = !!meta;
-  resetBtn.classList.toggle("hidden", !hasRoom);
-  endBtn.classList.toggle("hidden", !hasRoom);
-  hostHint.classList.toggle("hidden", !hasRoom);
+  const showHost = host && !!meta;
+  resetBtn.classList.toggle("hidden", !showHost);
+  endBtn.classList.toggle("hidden", !showHost);
+  hostHint.classList.toggle("hidden", !showHost);
+  if (!host && hostHint) {
+    hostHint.textContent = "Host controls live on the device that created this room.";
+  }
+}
+
+function renderLastAction(room) {
+  const box = document.getElementById("last-action");
+  if (!box) return;
+  const la = room.lastAction;
+  const players = room.players || {};
+  box.innerHTML = "";
+  if (!la || !la.by) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const byName = players[la.by]?.name || "Someone";
+  if (la.type === "guess") {
+    const targetName = players[la.target]?.name || "opponent";
+    const div = document.createElement("div");
+    div.className = "guess-result " + (la.correct ? "guess-result--correct" : "guess-result--wrong");
+    const head = document.createElement("div");
+    head.textContent = la.correct
+      ? `✓ ${byName} revealed ${targetName}'s ${la.tileId}!`
+      : `✕ ${byName} guessed ${la.value} on ${targetName} — wrong!`;
+    div.appendChild(head);
+    const sub = document.createElement("span");
+    sub.className = "guess-result__sub";
+    sub.textContent = la.correct ? `${targetName} · tile ${la.tileId} = ${la.value}` : `${byName}'s drawn tile is revealed`;
+    div.appendChild(sub);
+    box.appendChild(div);
+  } else if (la.type === "draw" && !la.skipped) {
+    box.innerHTML = `<div class="muted" style="font-size:0.85rem; text-align:center;">🎴 ${escapeHtml(byName)} drew a ${la.color === "B" ? "black" : "white"} tile</div>`;
+  } else if (la.type === "continue" && la.again) {
+    box.innerHTML = `<div class="muted" style="font-size:0.85rem; text-align:center;">→ ${escapeHtml(byName)} guesses again</div>`;
+  } else if (la.type === "continue" && !la.again) {
+    box.innerHTML = `<div class="muted" style="font-size:0.85rem; text-align:center;">■ ${escapeHtml(byName)} stops — tile placed face-down</div>`;
+  } else {
+    box.innerHTML = `<div class="muted" style="font-size:0.85rem; text-align:center;">${escapeHtml(byName)} continues</div>`;
+  }
+}
+
+function toggleWinOverlay(room) {
+  const meta = room.meta || {};
+  const existing = document.getElementById("win-overlay");
+  if (meta.status !== "ended") { winDismissed = false; if (existing) existing.remove(); return; }
+  if (winDismissed) return;
+  const wname = meta.winner && room.players?.[meta.winner] ? room.players[meta.winner].name : null;
+  let overlay = existing;
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "win-overlay";
+    overlay.className = "win-overlay";
+    const title = document.createElement("div");
+    title.className = "win-overlay__title";
+    title.textContent = "🏆";
+    overlay.appendChild(title);
+    const sub = document.createElement("div");
+    sub.className = "win-overlay__subtitle";
+    overlay.appendChild(sub);
+    const actions = document.createElement("div");
+    actions.className = "win-overlay__actions";
+    const dismissBtn = document.createElement("button");
+    dismissBtn.className = "win-overlay__btn win-overlay__btn--ghost";
+    dismissBtn.textContent = "Dismiss";
+    dismissBtn.onclick = () => { winDismissed = true; overlay.remove(); };
+    actions.appendChild(dismissBtn);
+    overlay.appendChild(actions);
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) { winDismissed = true; overlay.remove(); } });
+    document.body.appendChild(overlay);
+  }
+  const sub = overlay.querySelector(".win-overlay__subtitle");
+  if (sub) sub.textContent = wname ? `${wname} wins!` : "Game over";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }
 
 document.getElementById("start-btn").addEventListener("click", async (e) => {
+  if (!host) return;
   const btn = e.currentTarget;
   btn.disabled = true;
   const orig = btn.textContent;
@@ -297,12 +385,14 @@ document.getElementById("start-btn").addEventListener("click", async (e) => {
 });
 
 document.getElementById("reset-btn").addEventListener("click", async () => {
+  if (!host) return;
   if (!confirm("Reset to lobby? Keeps players but clears all tiles.")) return;
   try { await resetRoom(code); }
   catch (e) { alert("Reset failed: " + (e.message || e)); }
 });
 
 document.getElementById("end-btn").addEventListener("click", async () => {
+  if (!host) return;
   if (!confirm("End session? This deletes the room for everyone.")) return;
   try {
     await endRoom(code);
@@ -314,6 +404,3 @@ document.getElementById("end-btn").addEventListener("click", async () => {
   document.getElementById("room-code").textContent = "—";
   showTableError("Session ended.", "Share a new code from Host.");
 });
-
-// Keep unused import referenced to avoid tree-shake confusion in some hosts.
-void dbRef; void dbSet; void ROOM_ROOT;

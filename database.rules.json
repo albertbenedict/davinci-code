@@ -1,23 +1,18 @@
 {
   "rules": {
+    ".read": false,
+    ".write": false,
     "davinciRooms": {
       "$code": {
         ".read": true,
         ".write": true,
+        ".validate": "$code.matches(/^[A-Z0-9]{4,8}$/)",
         "meta": {
           "status": {
             ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|ended)$/)"
-          },
-          "$other": {
-            ".validate": true
           }
-        },
-        "$other": {
-          ".validate": true
         }
       }
-    },
-    ".read": false,
-    ".write": false
+    }
   }
 }

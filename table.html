@@ -27,13 +27,13 @@
       <p id="table-conn" class="muted" style="font-size:0.82rem; margin-top:0.5rem; display:flex; align-items:center; justify-content:center; gap:0.4rem;"><span id="table-conn-dot" style="width:8px;height:8px;border-radius:50%;background:#aaa;display:inline-block;"></span><span id="table-conn-text">Connecting…</span></p>
     </section>
 
-    <section class="board-equipment card center" aria-label="Pile">
+    <section class="board-pile card center" aria-label="Pile">
       <div class="card-head" style="margin-bottom:0.4rem; justify-content:center;"><h3 style="font-size:0.95rem;">Pile</h3></div>
       <div id="pile-counts" class="pile-counts">B — · W —</div>
       <p class="muted" style="font-size:0.78rem; margin-top:0.4rem;">24 tiles: B 0–11, W 0–11</p>
     </section>
 
-    <section class="board-detonator card center" aria-label="Status">
+    <section class="board-status card center" aria-label="Status">
       <div class="card-head" style="margin-bottom:0.4rem; justify-content:center;">
         <h3 style="font-size:0.95rem;">Status</h3>
         <span id="status-badge" class="badge badge--muted" style="margin-left:0.4rem;">Lobby</span>
@@ -48,6 +48,8 @@
     <div class="board-player-slot" data-slot="2"></div>
     <div class="board-player-slot" data-slot="3"></div>
   </section>
+
+  <div id="last-action" class="hidden"></div>
 
   <div class="board-actions">
     <button id="start-btn" class="btn-primary hidden">Start game</button>

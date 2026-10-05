@@ -42,7 +42,7 @@
       </label>
       <label class="field field--input">
         <span class="sr-only">Room code</span>
-        <input id="join-code" placeholder="ROOM CODE" autocomplete="off" maxlength="8" style="text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;">
+        <input id="join-code" placeholder="ROOM CODE" autocomplete="off" maxlength="4" style="text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;">
       </label>
     </div>
     <button id="join-btn" class="btn-secondary">Join game</button>
@@ -99,6 +99,11 @@
   const joinNameInput = document.getElementById("join-name");
   joinCodeInput.addEventListener("input", () => {
     const c = joinCodeInput.value.trim().toUpperCase();
+    const err = document.getElementById("join-error");
+    // Always clear the previous-session notice when the code changes.
+    err.classList.add("hidden");
+    err.style.color = ""; err.style.background = ""; err.style.borderColor = "";
+    joinBtn.textContent = "Join game";
     if (c.length === 4) {
       try {
         const prevName = localStorage.getItem(`dv-name-${c}`);
@@ -106,14 +111,11 @@
         if (prevName && prevId) {
           joinNameInput.value = prevName;
           joinBtn.textContent = `Rejoin as ${prevName}`;
-          const err = document.getElementById("join-error");
           err.textContent = `↻ Found previous session for ${prevName} – tap to rejoin with same tiles.`;
           err.style.color = "var(--text-muted)";
           err.style.background = "var(--surface)";
           err.style.borderColor = "var(--border-soft)";
           err.classList.remove("hidden");
-        } else {
-          joinBtn.textContent = "Join game";
         }
       } catch {}
     }
@@ -137,6 +139,14 @@
       errorEl.textContent = "⚠ Enter your name and the 4-character room code.";
       errorEl.style.color = ""; errorEl.style.background = ""; errorEl.style.borderColor = "";
       errorEl.classList.remove("hidden");
+      return;
+    }
+    if (code.length !== 4) {
+      errorEl.textContent = "⚠ Room codes are 4 characters — check the table screen.";
+      errorEl.style.color = ""; errorEl.style.background = ""; errorEl.style.borderColor = "";
+      errorEl.classList.remove("hidden");
+      joinBtn.disabled = false;
+      joinBtn.textContent = "Join game";
       return;
     }
     joinBtn.disabled = true;

@@ -28,8 +28,24 @@
       <span class="badge badge--muted" id="hand-count-badge">—</span>
     </div>
     <div id="hand" class="hand hand--tiles"></div>
-    <p class="muted" style="font-size:0.8rem; margin:0.5rem 0 0;">Revealed tiles are marked. Draw / guess actions arrive in the next chunk.</p>
+    <div id="turn-actions"></div>
     <div id="drawn-area" class="hidden"></div>
+    <div id="guess-box" class="hidden">
+      <div class="card-head" style="margin-top:0.75rem;">
+        <h3>Make a guess</h3>
+        <span id="guess-target-label" class="badge badge--muted"></span>
+      </div>
+      <p id="guess-hint" class="muted" style="font-size:0.82rem;">Pick a number 0–11.</p>
+      <div id="guess-grid" class="guess-grid"></div>
+      <div class="row" style="margin-top:0.6rem;">
+        <button id="guess-confirm" class="btn-primary">Confirm guess</button>
+        <button id="guess-cancel" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+    <div id="continue-row" class="draw-row hidden">
+      <button id="again-btn" class="btn-primary">Guess again</button>
+      <button id="stop-btn" class="btn-secondary">Stop</button>
+    </div>
   </div>
 
   <div class="card">
