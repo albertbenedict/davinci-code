@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Da Vinci Code</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<nav>
+  <span class="display nav-brand"><span class="nav-dot" aria-hidden="true"></span> Da Vinci Code</span>
+  <button class="toggle" id="theme-toggle" aria-label="Toggle theme">Dark mode</button>
+</nav>
+
+<main class="lobby">
+  <div class="card lobby-card host-card stack">
+    <div class="card-head">
+      <h2>Host a game</h2>
+      <span class="badge">Table view</span>
+    </div>
+    <p class="muted">This device becomes the table — set it somewhere everyone can see it. 2–4 players, in person.</p>
+    <ul class="muted" style="font-size:0.82rem; margin:0; padding-left:1.1rem; line-height:1.5;">
+      <li>24 tiles (0–11 in black &amp; white)</li>
+      <li>2–3 players: 4 tiles each · 4 players: 3 each</li>
+      <li>Sorted: by value, black before white</li>
+    </ul>
+    <button id="host-btn" class="btn-primary">Host game <span aria-hidden="true">→</span></button>
+    <p id="host-error" class="form-error hidden"></p>
+    <p id="host-hint" class="muted" style="font-size:0.82rem; display:flex; align-items:center; gap:0.4rem;"><span id="conn-dot" style="width:8px;height:8px;border-radius:50%;background:#aaa;display:inline-block;"></span><span id="conn-text">Connecting…</span></p>
+  </div>
+
+  <div class="card lobby-card join-card stack">
+    <div class="card-head">
+      <h2>Join a game</h2>
+      <span class="badge badge--muted">Player view</span>
+    </div>
+    <p class="muted">This device becomes your private row of tiles.</p>
+    <div class="join-fields stack">
+      <label class="field field--input">
+        <span class="sr-only">Your name</span>
+        <input id="join-name" placeholder="Your name" autocomplete="name" maxlength="24">
+      </label>
+      <label class="field field--input">
+        <span class="sr-only">Room code</span>
+        <input id="join-code" placeholder="ROOM CODE" autocomplete="off" maxlength="8" style="text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;">
+      </label>
+    </div>
+    <button id="join-btn" class="btn-secondary">Join game</button>
+    <p id="join-error" class="form-error hidden"><span aria-hidden="true">⚠</span> Couldn't find that room code.</p>
+  </div>
+</main>
+
+<script type="module">
+  import { createRoom, joinRoom, roomExists } from "./js/session.js";
+  import { db } from "./js/firebase-config.js";
+  import { ref, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
+  const connDot = document.getElementById("conn-dot");
+  const connText = document.getElementById("conn-text");
+  const hostError = document.getElementById("host-error");
+  const hostBtn = document.getElementById("host-btn");
+  const joinBtn = document.getElementById("join-btn");
+
+  function setConn(connected) {
+    if (!connDot || !connText) return;
+    connDot.style.background = connected ? "#1a9e32" : "#c81e2c";
+    connDot.style.boxShadow = connected ? "0 0 0 4px #d1f0d7" : "0 0 0 4px #fdeceb";
+    connText.textContent = connected ? "Connected to game server" : "Offline — check Wi-Fi / Firefox tracking protection";
+    if (connected) hostError?.classList.add("hidden");
+  }
+
+  try {
+    onValue(ref(db, ".info/connected"), (snap) => setConn(snap.val() === true), () => setConn(false));
+  } catch (e) {
+    console.error("conn listener failed", e);
+    setConn(false);
+  }
+
+  hostBtn.addEventListener("click", async () => {
+    hostError.classList.add("hidden");
+    hostError.textContent = "";
+    hostBtn.disabled = true;
+    hostBtn.textContent = "Creating…";
+    try {
+      const code = await createRoom();
+      if (!code) throw new Error("Empty code returned");
+      location.href = `table.html?session=${code}`;
+    } catch (err) {
+      console.error("createRoom failed", err);
+      hostError.textContent = `⚠ Couldn't create room: ${err?.message || err}. Check Wi-Fi, then reload.`;
+      hostError.classList.remove("hidden");
+      hostBtn.disabled = false;
+      hostBtn.innerHTML = `Host game <span aria-hidden="true">→</span>`;
+    }
+  });
+
+  // Reconnect hint: if this device previously joined this code, prefill name + show Rejoin
+  const joinCodeInput = document.getElementById("join-code");
+  const joinNameInput = document.getElementById("join-name");
+  joinCodeInput.addEventListener("input", () => {
+    const c = joinCodeInput.value.trim().toUpperCase();
+    if (c.length === 4) {
+      try {
+        const prevName = localStorage.getItem(`dv-name-${c}`);
+        const prevId = localStorage.getItem(`dv-player-${c}`);
+        if (prevName && prevId) {
+          joinNameInput.value = prevName;
+          joinBtn.textContent = `Rejoin as ${prevName}`;
+          const err = document.getElementById("join-error");
+          err.textContent = `↻ Found previous session for ${prevName} – tap to rejoin with same tiles.`;
+          err.style.color = "var(--text-muted)";
+          err.style.background = "var(--surface)";
+          err.style.borderColor = "var(--border-soft)";
+          err.classList.remove("hidden");
+        } else {
+          joinBtn.textContent = "Join game";
+        }
+      } catch {}
+    }
+  });
+  const qp = new URLSearchParams(location.search);
+  const joinParam = (qp.get("join") || qp.get("code") || "").trim().toUpperCase();
+  if (joinParam) {
+    joinCodeInput.value = joinParam;
+    joinCodeInput.dispatchEvent(new Event("input"));
+  }
+  try {
+    const lastName = localStorage.getItem("dv-last-name");
+    if (lastName && !joinNameInput.value) joinNameInput.value = lastName;
+  } catch {}
+
+  joinBtn.addEventListener("click", async () => {
+    const name = document.getElementById("join-name").value.trim();
+    const code = document.getElementById("join-code").value.trim().toUpperCase();
+    const errorEl = document.getElementById("join-error");
+    if (!name || !code) {
+      errorEl.textContent = "⚠ Enter your name and the 4-character room code.";
+      errorEl.style.color = ""; errorEl.style.background = ""; errorEl.style.borderColor = "";
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    joinBtn.disabled = true;
+    joinBtn.textContent = "Checking…";
+    try {
+      const exists = await roomExists(code);
+      if (!exists) {
+        errorEl.textContent = "⚠ Couldn't find that room code.";
+        errorEl.style.color = ""; errorEl.style.background = ""; errorEl.style.borderColor = "";
+        errorEl.classList.remove("hidden");
+        joinBtn.disabled = false;
+        joinBtn.textContent = "Join game";
+        return;
+      }
+      errorEl.classList.add("hidden");
+      try { localStorage.setItem("dv-last-name", name); } catch {}
+      let storedId = null;
+      try { storedId = localStorage.getItem(`dv-player-${code}`); } catch {}
+      const playerId = await joinRoom(code, name, storedId);
+      location.href = `player.html?session=${code}&player=${playerId}`;
+    } catch (err) {
+      console.error("join failed", err);
+      errorEl.textContent = `⚠ Join failed: ${err?.message || err}.`;
+      errorEl.style.color = ""; errorEl.style.background = ""; errorEl.style.borderColor = "";
+      errorEl.classList.remove("hidden");
+      joinBtn.disabled = false;
+      joinBtn.textContent = "Join game";
+    }
+  });
+</script>
+<script src="js/theme.js"></script>
+</body>
+</html>

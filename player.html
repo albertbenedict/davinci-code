@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Da Vinci Code — your tiles</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<nav>
+  <span class="display nav-brand"><span class="nav-dot" aria-hidden="true"></span> Da Vinci Code</span>
+  <span style="display:flex; gap:0.5rem; align-items:center;">
+    <a href="index.html" class="btn-ghost" style="padding:0.45rem 0.85rem; font-size:0.88rem; text-decoration:none; display:inline-flex; align-items:center; gap:0.3rem;">← Home</a>
+    <button id="leave-btn" class="btn-ghost" style="padding:0.45rem 0.85rem; font-size:0.88rem;">Leave room</button>
+    <button class="toggle" id="theme-toggle" aria-label="Toggle theme">Dark mode</button>
+  </span>
+</nav>
+
+<main>
+  <div id="turn-banner" class="turn-banner turn-banner--waiting">
+    <div id="turn-banner-label" class="turn-banner__label">Waiting…</div>
+    <div id="turn-indicator" class="turn-banner__sub badge badge--muted">Waiting…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>Your tiles</h3>
+      <span class="badge badge--muted" id="hand-count-badge">—</span>
+    </div>
+    <div id="hand" class="hand hand--tiles"></div>
+    <p class="muted" style="font-size:0.8rem; margin:0.5rem 0 0;">Revealed tiles are marked. Draw / guess actions arrive in the next chunk.</p>
+    <div id="drawn-area" class="hidden"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>Other players</h3>
+      <span class="badge badge--muted">color only</span>
+    </div>
+    <p class="muted" style="font-size:0.85rem;">Their tiles are face-down — color only, no numbers.</p>
+    <div id="targets" class="targets"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h3>Table info</h3>
+      <span class="badge badge--muted" id="room-badge">—</span>
+    </div>
+    <div id="pile-info" class="muted" style="font-size:0.9rem;">Pile: B — · W —</div>
+    <div id="status" class="banner hidden" style="margin-top:0.75rem;"></div>
+  </div>
+</main>
+
+<script type="module" src="js/player.js"></script>
+<script src="js/theme.js"></script>
+</body>
+</html>
